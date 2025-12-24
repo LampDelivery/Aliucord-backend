@@ -42,7 +42,7 @@ func init() {
 }
 
 func stickyCommand(e *gateway.InteractionCreateEvent, d *discord.CommandInteraction) error {
-	// Check if user has moderation permissions (MANAGE_MESSAGES, MANAGE_GUILD, BAN_MEMBERS, or KICK_MEMBERS)
+
 	perms, err := s.Permissions(e.ChannelID, e.Member.User.ID)
 	if err != nil {
 		return ephemeralReply(e, "Could not check your permissions")
@@ -65,9 +65,9 @@ func stickyCommand(e *gateway.InteractionCreateEvent, d *discord.CommandInteract
 	case "add":
 		var (
 			msgText        string
-			cooldown int64 = 120
-			includeWarning  = true
-			channelID       = e.ChannelID
+			cooldown       int64 = 120
+			includeWarning       = true
+			channelID            = e.ChannelID
 		)
 
 		for _, opt := range sub.Options {
@@ -83,7 +83,7 @@ func stickyCommand(e *gateway.InteractionCreateEvent, d *discord.CommandInteract
 					includeWarning = v
 				}
 			case "channel":
-				// opt.Value is json.Raw ([]byte). Parse snowflake from it.
+
 				raw := strings.Trim(string(opt.Value), "\"")
 				if u, err := strconv.ParseUint(raw, 10, 64); err == nil {
 					channelID = discord.ChannelID(u)

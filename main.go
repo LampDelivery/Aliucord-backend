@@ -36,9 +36,8 @@ func main() {
 		config.Bot.Token = token
 	}
 
-	// Initialize database
 	database.InitDB(config.Database)
-	
+
 	if config.Bot.Enabled && config.Bot.Token != "" {
 		modules.UpdateScamTitles()
 		bot.StartBot(config)

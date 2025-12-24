@@ -43,7 +43,7 @@ func InitCommands(botLogger *common.ExtendedLogger, botConfig *common.BotConfig,
 	logger = botLogger
 	config = botConfig
 
-	initModCommands() // Requires config to be initialised, init() is called too early
+	initModCommands()
 
 	logger.Printf("Loaded %d commands\n", commandsCount)
 
@@ -70,7 +70,6 @@ func InitCommands(botLogger *common.ExtendedLogger, botConfig *common.BotConfig,
 				return
 			}
 
-			// extra checks if discord does something dumb
 			if !slices.Contains(config.OwnerIDs, e.Member.User.ID) &&
 				(command.OwnerOnly || command.ModOnly && !slices.Contains(e.Member.RoleIDs, config.RoleIDs.ModRole)) {
 				return
@@ -96,7 +95,7 @@ func InitCommands(botLogger *common.ExtendedLogger, botConfig *common.BotConfig,
 				logger.Printf("Error while running command %s\n%v\n", command.Name, err)
 			}
 		case *discord.ButtonInteraction:
-			// Handle pagination button interactions
+
 			if d.CustomID == "" || e.Message == nil {
 				return
 			}
@@ -111,7 +110,6 @@ func InitCommands(botLogger *common.ExtendedLogger, botConfig *common.BotConfig,
 				return
 			}
 
-			// Adjust page within bounds
 			switch action {
 			case "prev":
 				if st.Page > 1 {
@@ -140,7 +138,7 @@ func InitCommands(botLogger *common.ExtendedLogger, botConfig *common.BotConfig,
 			}
 
 			if err != nil {
-				// Acknowledge with a minimal update showing error
+
 				_ = s.RespondInteraction(e.ID, e.Token, api.InteractionResponse{
 					Type: api.UpdateMessage,
 					Data: &api.InteractionResponseData{
@@ -163,7 +161,6 @@ func InitCommands(botLogger *common.ExtendedLogger, botConfig *common.BotConfig,
 		}
 	})
 
-	// Message-based prefix commands handler (only for commands we added)
 	s.AddHandler(func(msg *gateway.MessageCreateEvent) {
 		if msg.Author.Bot || msg.Member == nil {
 			return
@@ -251,8 +248,8 @@ func InitCommands(botLogger *common.ExtendedLogger, botConfig *common.BotConfig,
 		case "minky":
 			url := fmt.Sprintf("https://minky.materii.dev?cb=%d", time.Now().Unix())
 			_, _ = s.SendMessageComplex(msg.ChannelID, api.SendMessageData{
-				Content: "Here's a random Minky 🐱",
-				Embeds: []discord.Embed{{Image: &discord.EmbedImage{URL: url}}},
+				Content:         "Here's a random Minky 🐱",
+				Embeds:          []discord.Embed{{Image: &discord.EmbedImage{URL: url}}},
 				AllowedMentions: &api.AllowedMentions{RepliedUser: option.False},
 				Reference:       &discord.MessageReference{MessageID: msg.ID},
 			})
