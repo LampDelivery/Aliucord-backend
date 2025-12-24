@@ -1,10 +1,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/Aliucord/Aliucord-backend/bot"
@@ -12,7 +12,6 @@ import (
 	"github.com/Aliucord/Aliucord-backend/bot/modules"
 	"github.com/Aliucord/Aliucord-backend/common"
 	"github.com/Aliucord/Aliucord-backend/database"
-	"github.com/Aliucord/Aliucord-backend/updateTracker"
 	"github.com/valyala/fasthttp"
 )
 
@@ -32,81 +31,40 @@ func main() {
 		log.Fatal(err)
 	}
 
+	token := os.Getenv("DISCORD_BOT_TOKEN")
+	if token != "" {
+		config.Bot.Token = token
+	}
+
+	// Initialize database
 	database.InitDB(config.Database)
-	if config.Bot.Enabled {
+	
+	if config.Bot.Enabled && config.Bot.Token != "" {
 		modules.UpdateScamTitles()
 		bot.StartBot(config)
 		defer bot.StopBot()
 	}
-	updateTracker.StartUpdateTracker(config)
 
 	log.Println("Starting http server at port", config.Port)
-	fs := &fasthttp.FS{
-		Root:        config.ApkCacheDir,
-		PathRewrite: fasthttp.NewPathSlashesStripper(2),
-	}
-	apkFsHandler := fs.NewRequestHandler()
-	staticFs := &fasthttp.FS{Root: "static", IndexNames: []string{"index.html"}}
-	staticFsHandler := staticFs.NewRequestHandler()
 	server := fasthttp.Server{
 		Logger: &fastHttpLogger{},
 		Handler: func(ctx *fasthttp.RequestCtx) {
 			path := string(ctx.Path())
-			switch path {
-			case "/links/github":
-				ctx.Redirect("https://github.com/Aliucord", fasthttp.StatusMovedPermanently)
-			case "/links/discord":
-				ctx.Redirect("https://discord.gg/EsNDvBaHVU", fasthttp.StatusMovedPermanently)
-			case "/download/discord":
-				v := string(ctx.QueryArgs().Peek("v"))
-				if v == "" {
-					missingParams(ctx, []string{"v - discord version code"})
+			if strings.HasPrefix(path, "/badges/users/") {
+				id := strings.TrimPrefix(path, "/badges/users/")
+				if data, ok := commands.Badges.Users[id]; ok {
+					json.NewEncoder(ctx).Encode(&data)
 					return
 				}
-				version, err := strconv.Atoi(v)
-				if err != nil {
-					missingParams(ctx, []string{"v - discord version code"})
+			} else if strings.HasPrefix(path, "/badges/guilds/") {
+				id := strings.TrimPrefix(path, "/badges/guilds/")
+				if data, ok := commands.Badges.Guilds[id]; ok {
+					json.NewEncoder(ctx).Encode(data)
 					return
-				}
-				url, err := updateTracker.GetDownloadURL(version, string(ctx.QueryArgs().Peek("split")), false)
-				if err != nil {
-					ctx.SetStatusCode(fasthttp.StatusNotFound)
-					ctx.WriteString("apk not found: " + err.Error())
-					return
-				}
-				ctx.Redirect(url, fasthttp.StatusFound)
-			default:
-				if strings.HasPrefix(path, "/download/direct/") {
-					apkFsHandler(ctx)
-					ctx.Response.Header.Set("Cache-Control", "max-age=31536000") // 1 year
-				} else if strings.HasPrefix(path, "/badges/") { // temporary badges v1 api
-					if strings.HasPrefix(path, "/badges/users/") {
-						id := strings.TrimPrefix(path, "/badges/users/")
-						if data, ok := commands.Badges.Users[id]; ok {
-							json.NewEncoder(ctx).Encode(&data)
-							return
-						}
-					} else if strings.HasPrefix(path, "/badges/guilds/") {
-						id := strings.TrimPrefix(path, "/badges/guilds/")
-						if data, ok := commands.Badges.Guilds[id]; ok {
-							json.NewEncoder(ctx).Encode(data)
-							return
-						}
-					}
-					ctx.NotFound()
-				} else {
-					staticFsHandler(ctx)
 				}
 			}
+			ctx.WriteString("Bot is running!")
 		},
 	}
-	err = server.ListenAndServe(":" + config.Port)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-func missingParams(ctx *fasthttp.RequestCtx, params []string) {
-	ctx.SetStatusCode(fasthttp.StatusBadRequest)
-	ctx.WriteString("missing required query params:\n   " + strings.Join(params, "\n   "))
+	server.ListenAndServe(":" + config.Port)
 }

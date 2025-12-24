@@ -1,9 +1,13 @@
 package commands
 
 import (
+	"fmt"
+	"math/rand"
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/Aliucord/Aliucord-backend/common"
 	"github.com/diamondburned/arikawa/v3/api"
@@ -22,6 +26,17 @@ var (
 
 	idRegex = regexp.MustCompile("\\d{17,19}")
 )
+
+// Pagination state tracked per message for interactive buttons
+type listQuery struct {
+	Kind   string // "plugins" or "themes"
+	Search string
+	Author string
+	Page   int
+	Total  int
+}
+
+var paginationState = make(map[discord.MessageID]*listQuery)
 
 func InitCommands(botLogger *common.ExtendedLogger, botConfig *common.BotConfig, state *state.State) {
 	s = state
@@ -80,8 +95,182 @@ func InitCommands(botLogger *common.ExtendedLogger, botConfig *common.BotConfig,
 
 				logger.Printf("Error while running command %s\n%v\n", command.Name, err)
 			}
+		case *discord.ButtonInteraction:
+			// Handle pagination button interactions
+			if d.CustomID == "" || e.Message == nil {
+				return
+			}
+			parts := strings.Split(string(d.CustomID), ":")
+			if len(parts) != 3 || parts[0] != "page" {
+				return
+			}
+			kind := parts[1]
+			action := parts[2]
+			st, ok := paginationState[e.Message.ID]
+			if !ok || st == nil {
+				return
+			}
+
+			// Adjust page within bounds
+			switch action {
+			case "prev":
+				if st.Page > 1 {
+					st.Page--
+				}
+			case "next":
+				if st.Page < st.Total {
+					st.Page++
+				}
+			default:
+				return
+			}
+
+			var content string
+			var total int
+			var comps discord.ContainerComponents
+			var err error
+
+			switch kind {
+			case "plugins":
+				content, total, comps, err = renderPluginsPage(st.Search, st.Author, st.Page)
+			case "themes":
+				content, total, comps, err = renderThemesPage(st.Search, st.Author, st.Page)
+			default:
+				return
+			}
+
+			if err != nil {
+				// Acknowledge with a minimal update showing error
+				_ = s.RespondInteraction(e.ID, e.Token, api.InteractionResponse{
+					Type: api.UpdateMessage,
+					Data: &api.InteractionResponseData{
+						Content: option.NewNullableString("Something went wrong while paging."),
+					},
+				})
+				return
+			}
+
+			st.Total = total
+
+			_ = s.RespondInteraction(e.ID, e.Token, api.InteractionResponse{
+				Type: api.UpdateMessage,
+				Data: &api.InteractionResponseData{
+					Content:         option.NewNullableString(content),
+					Components:      &comps,
+					AllowedMentions: &api.AllowedMentions{},
+				},
+			})
 		}
 	})
+
+	// Message-based prefix commands handler (only for commands we added)
+	s.AddHandler(func(msg *gateway.MessageCreateEvent) {
+		if msg.Author.Bot || msg.Member == nil {
+			return
+		}
+		content := strings.TrimSpace(msg.Content)
+		if !strings.HasPrefix(content, "!") {
+			return
+		}
+		content = strings.TrimPrefix(content, "!")
+		fields := strings.Fields(content)
+		if len(fields) == 0 {
+			return
+		}
+		name := strings.ToLower(fields[0])
+		args := parseKVArgs(fields[1:])
+
+		switch name {
+		case "plugins":
+			search := strings.TrimSpace(args["search"])
+			author := strings.TrimSpace(args["author"])
+			page := 1
+			if p := strings.TrimSpace(args["page"]); p != "" {
+				if v, err := strconv.Atoi(p); err == nil && v > 0 {
+					page = v
+				}
+			}
+			content, total, comps, err := renderPluginsPage(search, author, page)
+			if err != nil {
+				logger.LogWithCtxIfErr("prefix plugins", err)
+				return
+			}
+			sent, err := s.SendMessageComplex(msg.ChannelID, api.SendMessageData{
+				Content:         content,
+				Components:      comps,
+				AllowedMentions: &api.AllowedMentions{RepliedUser: option.False},
+				Reference:       &discord.MessageReference{MessageID: msg.ID},
+			})
+			if err == nil && sent != nil {
+				paginationState[sent.ID] = &listQuery{Kind: "plugins", Search: search, Author: author, Page: page, Total: total}
+			}
+
+		case "themes":
+			search := strings.TrimSpace(args["search"])
+			author := strings.TrimSpace(args["author"])
+			page := 1
+			if p := strings.TrimSpace(args["page"]); p != "" {
+				if v, err := strconv.Atoi(p); err == nil && v > 0 {
+					page = v
+				}
+			}
+			content, total, comps, err := renderThemesPage(search, author, page)
+			if err != nil {
+				logger.LogWithCtxIfErr("prefix themes", err)
+				return
+			}
+			sent, err := s.SendMessageComplex(msg.ChannelID, api.SendMessageData{
+				Content:         content,
+				Components:      comps,
+				AllowedMentions: &api.AllowedMentions{RepliedUser: option.False},
+				Reference:       &discord.MessageReference{MessageID: msg.ID},
+			})
+			if err == nil && sent != nil {
+				paginationState[sent.ID] = &listQuery{Kind: "themes", Search: search, Author: author, Page: page, Total: total}
+			}
+
+		case "random-plugin":
+			list, err := fetchPlugins()
+			if err != nil || len(list) == 0 {
+				_, _ = s.SendMessageComplex(msg.ChannelID, api.SendMessageData{
+					Content:         "❌ Failed to fetch plugins.",
+					AllowedMentions: &api.AllowedMentions{RepliedUser: option.False},
+					Reference:       &discord.MessageReference{MessageID: msg.ID},
+				})
+				return
+			}
+			rand.Seed(time.Now().UnixNano())
+			p := list[rand.Intn(len(list))]
+			c := "**Random Plugin Suggestion**\n\n" + formatPluginLine(p) + "\n\n-# hold this message (not the links) to install"
+			_, _ = s.SendMessageComplex(msg.ChannelID, api.SendMessageData{
+				Content:         c,
+				AllowedMentions: &api.AllowedMentions{RepliedUser: option.False},
+				Reference:       &discord.MessageReference{MessageID: msg.ID},
+			})
+
+		case "minky":
+			url := fmt.Sprintf("https://minky.materii.dev?cb=%d", time.Now().Unix())
+			_, _ = s.SendMessageComplex(msg.ChannelID, api.SendMessageData{
+				Content: "Here's a random Minky 🐱",
+				Embeds: []discord.Embed{{Image: &discord.EmbedImage{URL: url}}},
+				AllowedMentions: &api.AllowedMentions{RepliedUser: option.False},
+				Reference:       &discord.MessageReference{MessageID: msg.ID},
+			})
+		}
+	})
+}
+
+// parseKVArgs parses tokens like key=value into a map
+func parseKVArgs(tokens []string) map[string]string {
+	m := make(map[string]string, len(tokens))
+	for _, t := range tokens {
+		if eq := strings.IndexByte(t, '='); eq > 0 {
+			k := strings.ToLower(strings.TrimSpace(t[:eq]))
+			v := strings.TrimSpace(t[eq+1:])
+			m[k] = v
+		}
+	}
+	return m
 }
 
 type Command struct {

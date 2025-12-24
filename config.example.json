@@ -40,26 +40,20 @@
   },
   "database": {
     "addr": "127.0.0.1:5432",
-    "user": "juby",
+    "user": "postgres",
     "password": "postgres",
-    "db": "AliucordBackend"
+    "db": "aliucorddb"
   },
   "updateTracker": {
-    "enabled": true,
+    "enabled": false,
     "cache": "_cache.json",
     "ignoreFirstUpdate": true,
     "webhook": {
-      "enabled": true,
+      "enabled": false,
       "id": 0,
       "token": ""
     },
-    "googlePlay": {
-      "alpha": {
-        "email": "",
-        "aasToken": "",
-        "webhook": true
-      }
-    }
+    "googlePlay": {}
   },
   "maxDownloadVer": 0,
   "minDownloadVer": 0,
