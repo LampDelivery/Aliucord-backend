@@ -40,9 +40,9 @@
   },
   "database": {
     "addr": "127.0.0.1:5432",
-    "user": "postgres",
+    "user": "juby",
     "password": "postgres",
-    "db": "aliucorddb"
+    "db": "AliucordBackend"
   },
   "updateTracker": {
     "enabled": false,
