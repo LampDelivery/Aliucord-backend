@@ -106,7 +106,6 @@ func pluginsCommand(e *gateway.InteractionCreateEvent, d *discord.CommandInterac
 	return nil
 }
 
-// renderPluginsPage builds the content and components for a given filter and page
 func renderPluginsPage(search, author string, page int) (string, int, discord.ContainerComponents, error) {
 	plugins, err := fetchPlugins()
 	if err != nil {
