@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/diamondburned/arikawa/v3/api"
 	"github.com/diamondburned/arikawa/v3/discord"
@@ -25,6 +27,16 @@ type aliucordPlugin struct {
 	Authors     any    `json:"authors"`
 	Changelog   string `json:"changelog"`
 }
+
+type pluginsCache struct {
+	data   []aliucordPlugin
+	expiry int64
+}
+
+var (
+	pCache      = make(map[string]*pluginsCache)
+	pCacheMutex sync.Mutex
+)
 
 func init() {
 	addCommand(&Command{
@@ -149,6 +161,13 @@ func renderPluginsPage(search, author string, page int) (string, int, discord.Co
 }
 
 func fetchPlugins() ([]aliucordPlugin, error) {
+	pCacheMutex.Lock()
+	defer pCacheMutex.Unlock()
+
+	if dl, ok := pCache["all"]; ok && dl.expiry > time.Now().Unix() {
+		return dl.data, nil
+	}
+
 	resp, err := http.Get(pluginsManifestURL)
 	if err != nil {
 		return nil, err
@@ -192,6 +211,12 @@ func fetchPlugins() ([]aliucordPlugin, error) {
 			Changelog:   fmt.Sprint(m["changelog"]),
 		})
 	}
+
+	pCache["all"] = &pluginsCache{
+		data:   out,
+		expiry: time.Now().Add(15 * time.Minute).Unix(),
+	}
+
 	return out, nil
 }
 

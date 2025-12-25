@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/diamondburned/arikawa/v3/api"
 	"github.com/diamondburned/arikawa/v3/discord"
@@ -25,6 +27,16 @@ type aliucordTheme struct {
 	RepoURL  string `json:"repoUrl"`
 	Filename string `json:"filename"`
 }
+
+type themesCache struct {
+	data   []aliucordTheme
+	expiry int64
+}
+
+var (
+	tCache      = make(map[string]*themesCache)
+	tCacheMutex sync.Mutex
+)
 
 func init() {
 	addCommand(&Command{
@@ -150,6 +162,13 @@ func renderThemesPage(search, author string, page int) (string, int, discord.Con
 }
 
 func fetchThemes() ([]aliucordTheme, error) {
+	tCacheMutex.Lock()
+	defer tCacheMutex.Unlock()
+
+	if dl, ok := tCache["all"]; ok && dl.expiry > time.Now().Unix() {
+		return dl.data, nil
+	}
+
 	resp, err := http.Get(themesDataURL)
 	if err != nil {
 		return nil, err
@@ -174,6 +193,12 @@ func fetchThemes() ([]aliucordTheme, error) {
 		}
 		out = append(out, t)
 	}
+
+	tCache["all"] = &themesCache{
+		data:   out,
+		expiry: time.Now().Add(15 * time.Minute).Unix(),
+	}
+
 	return out, nil
 }
 
