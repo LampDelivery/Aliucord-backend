@@ -106,7 +106,6 @@ func themesCommand(e *gateway.InteractionCreateEvent, d *discord.CommandInteract
 	return nil
 }
 
-// renderThemesPage builds content and components for the given filters and page
 func renderThemesPage(search, author string, page int) (string, int, discord.ContainerComponents, error) {
 	themes, err := fetchThemes()
 	if err != nil {
